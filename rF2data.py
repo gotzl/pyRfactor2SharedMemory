@@ -5,6 +5,7 @@ Auto-generated from rF2data.cs
 # pylint: disable=C,R,W
 
 from enum import Enum
+import sys
 import ctypes
 import mmap
 
@@ -447,7 +448,7 @@ class rF2TrackRules(ctypes.Structure):
     _pack_ = 4
     _fields_ = [
         ('mCurrentET', ctypes.c_double),                                    # current time
-        ('mStage', rF2TrackRulesStage),                            # current stage
+        ('mStage', ctypes.c_int),                            # current stage
         ('mPoleColumn', ctypes.c_int),                      # column assignment where pole position seems to be located
         ('mNumActions', ctypes.c_int),                                      # number of recent actions
         ('pointer1', ctypes.c_ubyte*8),
@@ -585,7 +586,7 @@ class rF2PitInfo(ctypes.Structure):
     _fields_ = [
         ('mVersionUpdateBegin', ctypes.c_int),                             # Incremented right before buffer is written to.
         ('mVersionUpdateEnd', ctypes.c_int),                               # Incremented after buffer write is done.
-        ('mPitMneu', rF2PitMenu),
+        ('mPitMenu', rF2PitMenu),
     ]
 #untranslated [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 4)]
 class rF2Weather(ctypes.Structure):
@@ -693,20 +694,30 @@ class SubscribedBuffer(Enum):
 class SimInfo:
     def __init__(self):
 
-
-        self._rf2_tele = mmap.mmap(0, ctypes.sizeof(rF2Telemetry), "$rFactor2SMMP_Telemetry$")
+        if sys.platform == "win32":
+            self._rf2_tele = mmap.mmap(0, ctypes.sizeof(rF2Telemetry), "$rFactor2SMMP_Telemetry$")
+            self._rf2_scor = mmap.mmap(0, ctypes.sizeof(rF2Scoring), "$rFactor2SMMP_Scoring$")
+            self._rf2_ext = mmap.mmap(0, ctypes.sizeof(rF2Extended), "$rFactor2SMMP_Extended$")
+            self._rf2_pit = mmap.mmap(0, ctypes.sizeof(rF2Extended), "$rFactor2SMMP_PitInfo$")
+        if sys.platform == "linux":
+            def get_mmap(name):
+                with open('/dev/shm/%s' % name, 'r+b') as f:
+                    return mmap.mmap(f.fileno(), 0)
+            self._rf2_tele = get_mmap('$rFactor2SMMP_Telemetry$')
+            self._rf2_scor = get_mmap('$rFactor2SMMP_Scoring$')
+            self._rf2_ext = get_mmap('$rFactor2SMMP_Extended$')         
+            self._rf2_pit = get_mmap('$rFactor2SMMP_PitInfo$')         
+            
         self.Rf2Tele = rF2Telemetry.from_buffer(self._rf2_tele)
-        self._rf2_scor = mmap.mmap(0, ctypes.sizeof(rF2Scoring), "$rFactor2SMMP_Scoring$")
         self.Rf2Scor = rF2Scoring.from_buffer(self._rf2_scor)
-        self._rf2_ext = mmap.mmap(0, ctypes.sizeof(rF2Extended), "$rFactor2SMMP_Extended$")
         self.Rf2Ext = rF2Extended.from_buffer(self._rf2_ext)
-
+        self.Rf2PitMenu = rF2PitMenu.from_buffer(self._rf2_pit)
+        
     def close(self):
       # This didn't help with the errors
       try:
-        self._rf2_tele.close()
-        self._rf2_scor.close()
-        self._rf2_ext.close()
+          for attr in ['_rf2_tele', '_rf2_scor', '_rf2_ext', '_rf2_pit']:
+            if hasattr(self, attr): getattr(self,attr).close()
       except BufferError: # "cannot close exported pointers exist"
         pass
 
